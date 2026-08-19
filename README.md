@@ -193,7 +193,7 @@ Clone the repository, enter it and then launch build.sh:
 
 ```bash
 git clone https://github.com/seba970423/CachyOSKernel-Forge
-cd cd CachyOSKernel-Forge/
+cd CachyOSKernel-Forge/
 ./builder.sh
 ```
 
