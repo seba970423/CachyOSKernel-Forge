@@ -1,4 +1,4 @@
-# CachyOS Hardware-Aware Kernel Builder
+# CachyOSKernel-Forge
 
 A hardware-aware custom kernel builder for Arch Linux and Arch-based distributions, using the CachyOS kernel packaging repository as upstream.
 
