@@ -106,6 +106,19 @@ linux-seba-rt-bore
 
 A leading `linux-` entered by the user is handled automatically.
 
+### Upstream PGP signing-key handling
+
+Before source preparation, Forge inspects the selected upstream PKGBUILD's
+`validpgpkeys` fingerprints and checks the invoking user's GnuPG keyring.
+
+If a required key is missing or locally expired, Forge explains the problem
+and offers to retrieve or refresh only the full fingerprints explicitly pinned
+by that upstream PKGBUILD. Retrieved keys are fingerprint-checked before use.
+
+Signature verification is never disabled or bypassed. If a required key cannot
+be retrieved or remains unusable, the build stops safely before the expensive
+source/build stages.
+
 ### Dependency handling
 
 Kernel PKGBUILD dependencies remain defined by the selected upstream CachyOS PKGBUILD.
@@ -179,6 +192,7 @@ The builder itself expects common Arch build tooling such as:
 
 - Bash
 - Git
+- GnuPG (`gpg`)
 - `makepkg`
 - GNU Make
 - pacman for dependency/package installation
@@ -234,6 +248,7 @@ A dry run should be used before expensive real builds when making substantial ch
 ├── lib/
 │   ├── hardware.sh
 │   ├── kconfig.sh
+│   ├── pgp.sh
 │   ├── policy.sh
 │   ├── profile.sh
 │   ├── upstream.sh
@@ -253,6 +268,10 @@ Safe configuration/preparation test path without a real kernel compile/install.
 ### `lib/hardware.sh`
 
 Hardware detection and hardware summary.
+
+### `lib/pgp.sh`
+
+Checks upstream `validpgpkeys`, offers safe retrieval/refresh of missing signing keys, and never bypasses makepkg signature verification.
 
 ### `lib/policy.sh`
 

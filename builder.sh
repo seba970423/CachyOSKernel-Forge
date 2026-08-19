@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$SCRIPT_DIR"
 
 source "$REPO_ROOT/lib/upstream.sh"
+source "$REPO_ROOT/lib/pgp.sh"
 source "$REPO_ROOT/lib/profile.sh"
 source "$REPO_ROOT/lib/hardware.sh"
 source "$REPO_ROOT/lib/policy.sh"
@@ -21,7 +22,7 @@ require_command() {
 
 require_commands() {
     local cmd
-    for cmd in git makepkg make find cp mktemp yes awk mv sort basename tail grep mkdir; do
+    for cmd in git makepkg make find cp mktemp yes awk mv sort basename tail grep gpg mkdir; do
         require_command "$cmd"
     done
 }
@@ -60,6 +61,8 @@ prepare_upstream_source() {
 
     # This function is used in command substitution. Keep stdout reserved
     # exclusively for the final kernel-tree path.
+    ensure_upstream_pgp_keys "$package_dir"
+
     printf '==> Checking dependencies for %s...\n' "$variant" >&2
     printf '==> Missing PKGBUILD dependencies, if any, will be offered through pacman.\n' >&2
     printf '==> Preparing %s sources (no compilation)...\n' "$variant" >&2
