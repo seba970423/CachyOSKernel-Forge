@@ -189,22 +189,11 @@ A normal Arch package-building environment is expected. On a minimal vanilla Arc
 
 ## Usage
 
-Clone the repository and enter it:
+Clone the repository, enter it and then launch build.sh:
 
 ```bash
-git clone <repository-url>
-cd <repository-directory>
-```
-
-Make the builder executable:
-
-```bash
-chmod +x builder.sh
-```
-
-Run it:
-
-```bash
+git clone https://github.com/seba970423/CachyOSKernel-Forge
+cd cd CachyOSKernel-Forge/
 ./builder.sh
 ```
 
