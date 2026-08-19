@@ -340,7 +340,3 @@ Potential follow-up work includes:
 - optional aggressive current-machine pruning while retaining the portable profile as the default
 
 The desktop profile should remain conservative and known-good while more specialized profiles are developed independently.
-
-## License
-
-Add the project's chosen license here before publishing if one has not already been selected.
