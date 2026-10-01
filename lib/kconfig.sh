@@ -13,6 +13,7 @@
 #   KEEP_THUNDERBOLT
 #   ENABLE_NVME_FABRICS
 #   ENABLE_NVME_TARGET
+#   ENABLE_LATENCY_TUNING
 
 kconfig_require_tree() {
     local tree="$1"
@@ -250,6 +251,46 @@ kconfig_apply_policy() {
 
     if [[ "${KEEP_THUNDERBOLT:-yes}" == "no" ]]; then
         kconfig_disable "$tree" USB4
+    fi
+
+    # --- Desktop latency tuning ---
+    #
+    # HZ_1000 is a member of the kernel's HZ choice group (100/250/300/1000),
+    # not a standalone tick-mode flag like TICKRATE/NO_HZ_*. It sets the
+    # timer/scheduler granularity. TRANSPARENT_HUGEPAGE_MADVISE is only set
+    # when enabling: it is itself a choice member nested under
+    # TRANSPARENT_HUGEPAGE, so it is meaningless to touch while that parent
+    # is being disabled.
+    #
+    # PREEMPT_RT carries an upstream "depends on ... && !PREEMPT_RT" on
+    # TRANSPARENT_HUGEPAGE (added by the RT maintainers: khugepaged
+    # compaction and hugepage-aligned faults introduce non-deterministic
+    # latency that RT threads can't tolerate). Forcing it on there doesn't
+    # fail loudly -- olddefconfig just drops the symbol to invisible/absent
+    # afterwards -- so we detect RT and skip THP outright rather than
+    # write a config line the kernel will silently discard.
+
+    kconfig_require_symbol "$tree" HZ_1000 || return 1
+    kconfig_require_symbol "$tree" SCHED_AUTOGROUP || return 1
+
+    kconfig_set_bool "$tree" HZ_1000 "${ENABLE_LATENCY_TUNING:-no}" || return 1
+    kconfig_set_bool "$tree" SCHED_AUTOGROUP "${ENABLE_LATENCY_TUNING:-no}" || return 1
+
+    local latency_thp_applicable="yes"
+    if [[ "$(kconfig_state "$tree/.config" PREEMPT_RT)" == "y" ]]; then
+        latency_thp_applicable="no"
+        info "Skipping TRANSPARENT_HUGEPAGE: this kernel is PREEMPT_RT, which upstream excludes THP from (non-deterministic RT latency)."
+    fi
+
+    if [[ "$latency_thp_applicable" == "yes" ]]; then
+        kconfig_require_symbol "$tree" TRANSPARENT_HUGEPAGE || return 1
+        kconfig_require_symbol "$tree" TRANSPARENT_HUGEPAGE_MADVISE || return 1
+
+        kconfig_set_bool "$tree" TRANSPARENT_HUGEPAGE "${ENABLE_LATENCY_TUNING:-no}" || return 1
+
+        if [[ "${ENABLE_LATENCY_TUNING:-no}" == "yes" ]]; then
+            kconfig_enable "$tree" TRANSPARENT_HUGEPAGE_MADVISE
+        fi
     fi
 
     # --- Specialized NVMe functionality ---

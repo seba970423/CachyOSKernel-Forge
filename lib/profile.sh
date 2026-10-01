@@ -113,6 +113,14 @@ validate_profile() {
             ;;
     esac
 
+    case "${DEFAULT_ENABLE_LATENCY_TUNING:-}" in
+        yes|no)
+            ;;
+        *)
+            die "DEFAULT_ENABLE_LATENCY_TUNING must be yes or no."
+            ;;
+    esac
+
     # These are part of the portable profile contract and are consumed later
     # by the Kconfig/build validation layer.
     declare -p REQUIRE_ENABLED >/dev/null 2>&1 ||

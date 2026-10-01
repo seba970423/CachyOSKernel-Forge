@@ -202,6 +202,28 @@ validate_kernel_policy() {
         validate_disabled "$config" USB4 || return 1
     fi
 
+    # Desktop latency tuning.
+    if [[ "${ENABLE_LATENCY_TUNING:-no}" == "yes" ]]; then
+        validate_enabled_bool "$config" HZ_1000 || return 1
+        validate_enabled_bool "$config" SCHED_AUTOGROUP || return 1
+    else
+        validate_disabled "$config" HZ_1000 || return 1
+        validate_disabled "$config" SCHED_AUTOGROUP || return 1
+    fi
+
+    # TRANSPARENT_HUGEPAGE carries "depends on ... && !PREEMPT_RT" upstream,
+    # so on an RT kernel it is never controllable by this policy: it is
+    # invisible/absent regardless of what we asked for, and that is correct,
+    # not a failure.
+    if [[ "$(config_state "$config" PREEMPT_RT)" == "y" ]]; then
+        printf '    OK  CONFIG_TRANSPARENT_HUGEPAGE not applicable (PREEMPT_RT kernel)\n'
+    elif [[ "${ENABLE_LATENCY_TUNING:-no}" == "yes" ]]; then
+        validate_enabled_bool "$config" TRANSPARENT_HUGEPAGE || return 1
+        validate_enabled_bool "$config" TRANSPARENT_HUGEPAGE_MADVISE || return 1
+    else
+        validate_disabled "$config" TRANSPARENT_HUGEPAGE || return 1
+    fi
+
     # Specialized NVMe functionality.
     local symbol
     if [[ "${ENABLE_NVME_FABRICS:-no}" == "yes" ]]; then

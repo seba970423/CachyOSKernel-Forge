@@ -135,6 +135,19 @@ resolve_hardware_policy() {
     KEEP_NOUVEAU="yes"
 }
 
+resolve_latency_policy() {
+    ENABLE_LATENCY_TUNING="$DEFAULT_ENABLE_LATENCY_TUNING"
+
+    if ask_yes_no \
+        "Enable desktop latency tuning (1000Hz tick, scheduler autogrouping, on-demand transparent hugepages)?" \
+        "$DEFAULT_ENABLE_LATENCY_TUNING"
+    then
+        ENABLE_LATENCY_TUNING="yes"
+    else
+        ENABLE_LATENCY_TUNING="no"
+    fi
+}
+
 resolve_nvme_policy() {
     ENABLE_NVME_FABRICS="$DEFAULT_ENABLE_NVME_FABRICS"
     ENABLE_NVME_TARGET="$DEFAULT_ENABLE_NVME_TARGET"
@@ -161,6 +174,7 @@ resolve_nvme_policy() {
 resolve_policy() {
     resolve_virtualization_policy
     resolve_hardware_policy
+    resolve_latency_policy
     resolve_nvme_policy
 }
 
@@ -175,6 +189,7 @@ print_policy_summary() {
     printf '    Nouveau:             %s\n' "$KEEP_NOUVEAU"
     printf '    Intel Wi-Fi:         %s\n' "$KEEP_IWLWIFI"
     printf '    Thunderbolt/USB4:    %s\n' "$KEEP_THUNDERBOLT"
+    printf '    Latency tuning:      %s\n' "$ENABLE_LATENCY_TUNING"
     printf '    NVMe Fabrics:        %s\n' "$ENABLE_NVME_FABRICS"
     printf '    NVMe Target:         %s\n' "$ENABLE_NVME_TARGET"
 }
