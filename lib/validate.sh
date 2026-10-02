@@ -111,6 +111,71 @@ validate_profile_invariants() {
     esac
 }
 
+# Compare complete symbol lines, including numeric values and choice members.
+validate_config_group_preserved() {
+    local baseline="$1" config="$2" pattern="$3" label="$4"
+    local before after
+    before="$(grep -E "$pattern" "$baseline" | LC_ALL=C sort || true)"
+    after="$(grep -E "$pattern" "$config" | LC_ALL=C sort || true)"
+    if [[ "$before" != "$after" ]]; then
+        validation_error "$label changed unexpectedly."
+        return 1
+    fi
+    printf '    OK  %s preserved\n' "$label"
+}
+
+validate_tick_frequency() {
+    local baseline="$1" config="$2"
+    local hz="${KERNEL_HZ:-upstream}"
+    local line count=0
+
+    case "$hz" in
+        upstream)
+            validate_config_group_preserved "$baseline" "$config" \
+                '^(CONFIG_HZ(=[0-9]+|_[0-9]+=.*)|# CONFIG_HZ(_[0-9]+)? is not set)$' \
+                'Upstream tick frequency' || return 1
+            ;;
+        100|250|300|1000)
+            validate_enabled_bool "$config" "HZ_$hz" || return 1
+            if ! grep -qx "CONFIG_HZ=$hz" "$config"; then
+                validation_error "CONFIG_HZ did not resolve to requested frequency $hz."
+                return 1
+            fi
+            while read -r line; do
+                [[ -n "$line" ]] || continue
+                count=$((count + 1))
+            done < <(grep -E '^CONFIG_HZ_[0-9]+=y$' "$config" || true)
+            if [[ "$count" != 1 ]]; then
+                validation_error "Expected exactly one enabled HZ frequency choice, found $count."
+                return 1
+            fi
+            printf '    OK  CONFIG_HZ = %s\n' "$hz"
+            ;;
+        *) validation_error "Invalid KERNEL_HZ: $hz"; return 1 ;;
+    esac
+
+
+    if [[ "${ENABLE_AUTOGROUP:-no}" == yes ]]; then
+        validate_enabled_bool "$config" SCHED_AUTOGROUP || return 1
+    else
+        validate_config_group_preserved "$baseline" "$config" \
+            '^(CONFIG_SCHED_AUTOGROUP=.*|# CONFIG_SCHED_AUTOGROUP is not set)$' \
+            'Scheduler autogrouping' || return 1
+    fi
+    if [[ "${ENABLE_THP_MADVISE:-no}" == yes ]]; then
+        validate_disabled "$config" PREEMPT_RT || return 1
+        validate_enabled_bool "$config" TRANSPARENT_HUGEPAGE || return 1
+        validate_enabled_bool "$config" TRANSPARENT_HUGEPAGE_MADVISE || return 1
+        validate_disabled "$config" TRANSPARENT_HUGEPAGE_ALWAYS || return 1
+        validate_disabled "$config" TRANSPARENT_HUGEPAGE_NEVER || return 1
+    else
+        validate_config_group_preserved "$baseline" "$config" \
+            '^(CONFIG_TRANSPARENT_HUGEPAGE[A-Z0-9_]*=.*|# CONFIG_TRANSPARENT_HUGEPAGE[A-Z0-9_]* is not set)$' \
+            'Transparent hugepage configuration' || return 1
+    fi
+
+}
+
 validate_kernel_policy() {
     local tree="$1"
     local baseline="$2"
@@ -202,27 +267,7 @@ validate_kernel_policy() {
         validate_disabled "$config" USB4 || return 1
     fi
 
-    # Desktop latency tuning.
-    if [[ "${ENABLE_LATENCY_TUNING:-no}" == "yes" ]]; then
-        validate_enabled_bool "$config" HZ_1000 || return 1
-        validate_enabled_bool "$config" SCHED_AUTOGROUP || return 1
-    else
-        validate_disabled "$config" HZ_1000 || return 1
-        validate_disabled "$config" SCHED_AUTOGROUP || return 1
-    fi
-
-    # TRANSPARENT_HUGEPAGE carries "depends on ... && !PREEMPT_RT" upstream,
-    # so on an RT kernel it is never controllable by this policy: it is
-    # invisible/absent regardless of what we asked for, and that is correct,
-    # not a failure.
-    if [[ "$(config_state "$config" PREEMPT_RT)" == "y" ]]; then
-        printf '    OK  CONFIG_TRANSPARENT_HUGEPAGE not applicable (PREEMPT_RT kernel)\n'
-    elif [[ "${ENABLE_LATENCY_TUNING:-no}" == "yes" ]]; then
-        validate_enabled_bool "$config" TRANSPARENT_HUGEPAGE || return 1
-        validate_enabled_bool "$config" TRANSPARENT_HUGEPAGE_MADVISE || return 1
-    else
-        validate_disabled "$config" TRANSPARENT_HUGEPAGE || return 1
-    fi
+    validate_tick_frequency "$baseline" "$config" || return 1
 
     # Specialized NVMe functionality.
     local symbol

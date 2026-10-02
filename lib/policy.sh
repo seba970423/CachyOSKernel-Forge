@@ -31,7 +31,7 @@ ask_yes_no() {
             printf '%s [y/N]: ' "$prompt"
         fi
 
-        read -r answer
+        read -r answer || answer=""
 
         if [[ -z "$answer" ]]; then
             [[ "$default" == "yes" ]]
@@ -135,17 +135,26 @@ resolve_hardware_policy() {
     KEEP_NOUVEAU="yes"
 }
 
-resolve_latency_policy() {
-    ENABLE_LATENCY_TUNING="$DEFAULT_ENABLE_LATENCY_TUNING"
-
-    if ask_yes_no \
-        "Enable desktop latency tuning (1000Hz tick, scheduler autogrouping, on-demand transparent hugepages)?" \
-        "$DEFAULT_ENABLE_LATENCY_TUNING"
-    then
-        ENABLE_LATENCY_TUNING="yes"
-    else
-        ENABLE_LATENCY_TUNING="no"
-    fi
+resolve_tick_frequency_policy() {
+    local answer
+    case "${DEFAULT_KERNEL_HZ:-upstream}" in
+        upstream|100|250|300|1000) ;;
+        *) die "Invalid DEFAULT_KERNEL_HZ: ${DEFAULT_KERNEL_HZ:-unset}" ;;
+    esac
+    printf 'Kernel tick frequency: upstream (keep selected kernel default) / 100 / 250 / 300 / 1000 Hz.\n'
+    printf 'This does not change tickless mode, scheduler autogrouping or transparent hugepages.\n'
+    while true; do
+        printf 'Choose tick frequency [%s]: ' "${DEFAULT_KERNEL_HZ:-upstream}"
+        read -r answer || answer=""
+        answer="${answer:-${DEFAULT_KERNEL_HZ:-upstream}}"
+        case "$answer" in
+            upstream|100|250|300|1000)
+                KERNEL_HZ="$answer"
+                return 0
+                ;;
+            *) printf 'Please enter upstream, 100, 250, 300 or 1000.\n' ;;
+        esac
+    done
 }
 
 resolve_nvme_policy() {
@@ -174,7 +183,6 @@ resolve_nvme_policy() {
 resolve_policy() {
     resolve_virtualization_policy
     resolve_hardware_policy
-    resolve_latency_policy
     resolve_nvme_policy
 }
 
@@ -189,7 +197,47 @@ print_policy_summary() {
     printf '    Nouveau:             %s\n' "$KEEP_NOUVEAU"
     printf '    Intel Wi-Fi:         %s\n' "$KEEP_IWLWIFI"
     printf '    Thunderbolt/USB4:    %s\n' "$KEEP_THUNDERBOLT"
-    printf '    Latency tuning:      %s\n' "$ENABLE_LATENCY_TUNING"
+    print_kernel_tuning_summary
     printf '    NVMe Fabrics:        %s\n' "$ENABLE_NVME_FABRICS"
     printf '    NVMe Target:         %s\n' "$ENABLE_NVME_TARGET"
+}
+
+# Called only after selecting and preparing the kernel and saving its baseline.
+resolve_kernel_tuning_policy() {
+    local tree="$1" variant="$2"
+    ENABLE_AUTOGROUP="no"
+    ENABLE_THP_MADVISE="no"
+    kconfig_detect_tuning_support "$tree" "$variant" || return 1
+
+    printf '\n'
+    info "Optional tuning for $variant (n or Enter keeps upstream settings)."
+    resolve_tick_frequency_policy
+    if [[ "$AUTOGROUP_SUPPORTED" == "yes" ]]; then
+        if ask_yes_no "Enable scheduler autogrouping? (n keeps upstream)" no; then
+            ENABLE_AUTOGROUP="yes"
+        fi
+    fi
+    if [[ "$THP_SUPPORTED" == "yes" ]]; then
+        if ask_yes_no "Enable transparent hugepages in madvise mode? (n keeps upstream)" no; then
+            ENABLE_THP_MADVISE="yes"
+        fi
+    fi
+}
+
+print_kernel_tuning_summary() {
+    printf '    Tick frequency:      %s\n' "${KERNEL_HZ:-upstream}"
+    if [[ "${AUTOGROUP_SUPPORTED:-no}" == "yes" ]]; then
+        if [[ "${ENABLE_AUTOGROUP:-no}" == "yes" ]]; then
+            printf '    Autogrouping:        enable\n'
+        else
+            printf '    Autogrouping:        keep upstream\n'
+        fi
+    fi
+    if [[ "${THP_SUPPORTED:-no}" == "yes" ]]; then
+        if [[ "${ENABLE_THP_MADVISE:-no}" == "yes" ]]; then
+            printf '    Transparent HP:      enable (madvise)\n'
+        else
+            printf '    Transparent HP:      keep upstream\n'
+        fi
+    fi
 }

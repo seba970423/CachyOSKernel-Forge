@@ -113,11 +113,11 @@ validate_profile() {
             ;;
     esac
 
-    case "${DEFAULT_ENABLE_LATENCY_TUNING:-}" in
-        yes|no)
+    case "${DEFAULT_KERNEL_HZ:-}" in
+        upstream|100|250|300|1000)
             ;;
         *)
-            die "DEFAULT_ENABLE_LATENCY_TUNING must be yes or no."
+            die "DEFAULT_KERNEL_HZ must be upstream, 100, 250, 300 or 1000."
             ;;
     esac
 

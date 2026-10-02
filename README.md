@@ -203,6 +203,40 @@ A normal Arch package-building environment is expected. On a minimal vanilla Arc
 
 ## Usage
 
+### Kernel tick frequency
+
+After variant selection and source preparation, both the full builder and
+dry-run ask for `upstream`, `100`, `250`, `300`,
+or `1000` Hz. Press Enter to preserve the selected variant's upstream
+frequency. An explicit frequency is checked against the selected kernel
+source; unavailable choices fail before compilation. After `olddefconfig`,
+validation checks both the frequency choice and the numeric `CONFIG_HZ` value.
+
+Tick frequency is independent of the other options. The existing
+`TICKRATE=idle` profile controls tickless mode; it is not a frequency in Hz.
+
+### Optional autogrouping and transparent hugepages
+
+These independent prompts appear after selecting, preparing, and normalizing
+the kernel. Support is checked by resolving a separate trial configuration;
+the upstream baseline remains untouched.
+
+- Autogrouping is offered only when Kconfig permits it, including RT variants.
+  BMQ and other `SCHED_ALT` configurations never get this prompt.
+- Transparent hugepages (THP) are offered only for non-RT variants where Kconfig
+  permits THP and its `madvise` mode. RT variants never get this prompt.
+- Each prompt defaults to **no**. `n`, Enter, or EOF preserves the selected
+  kernel's upstream setting, whether enabled, disabled, or absent.
+- `y` enables autogrouping, or enables THP with `madvise` as its kernel default.
+  THP `madvise` uses hugepages for applications that explicitly request them.
+
+After dependency resolution, validation checks the requested settings or exact
+preservation of declined settings. These options do not write sysctl/sysfs
+settings or modify userspace services.
+
+The former combined latency-tuning toggle has been removed.
+
+
 Clone the repository, enter it, and then launch builder.sh:
 
 ```bash
@@ -215,7 +249,7 @@ The builder will then:
 
 1. load and validate the selected project profile
 2. detect local hardware
-3. resolve optional kernel policy
+3. resolve optional hardware and virtualization policy
 4. create a disk-backed build workspace
 5. clone the latest CachyOS kernel packaging repository
 6. discover available compatible kernel variants
@@ -223,7 +257,7 @@ The builder will then:
 8. optionally rename the resulting kernel/package
 9. synchronize missing PKGBUILD dependencies when necessary
 10. prepare the upstream kernel source
-11. normalize the upstream Kconfig baseline
+11. normalize the upstream Kconfig baseline and ask for supported optional tuning
 12. apply the project profile
 13. apply the resolved hardware/feature policy
 14. run `olddefconfig`
@@ -232,6 +266,12 @@ The builder will then:
 17. optionally install the exact packages produced by the build
 
 ## Dry run
+
+Local regression tests (no kernel compilation or installation):
+
+```bash
+./tests/run-tests.sh
+```
 
 `builder-dry-run.sh` is retained as a development and validation tool.
 

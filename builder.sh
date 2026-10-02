@@ -323,8 +323,6 @@ main() {
 
     resolve_policy
     printf '\n'
-    print_policy_summary
-    printf '\n'
 
     local workdir
     local checkout
@@ -366,6 +364,10 @@ main() {
 
     baseline="$tree/.config.seba-normalized-baseline"
     cp "$tree/.config" "$baseline"
+
+    resolve_kernel_tuning_policy "$tree" "$variant"
+    print_policy_summary
+    printf '\n'
 
     printf '==> Applying portable profile...\n'
     kconfig_apply_profile "$tree"
