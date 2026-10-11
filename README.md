@@ -141,6 +141,23 @@ and assigns a dedicated `TMPDIR` inside that workspace.
 
 This avoids placing a full kernel build inside a potentially size-limited `/tmp` tmpfs.
 
+### Optional Zstandard-compressed DWARF
+
+When a selected kernel enables DWARF debugging and its compiler/linker can
+resolve `CONFIG_DEBUG_INFO_COMPRESSED_ZSTD`, both the full and dry-run builders
+offer an optional Zstd-compression prompt. Enter or **No** preserves the
+upstream configuration. The tool probes a disposable copy before offering the
+setting; the final resolved configuration must still retain DWARF version,
+BTF, and BTF module support. No driver pruning or removal of debug
+information is involved.
+
+The builder also retains `.kernelforge-space-report.txt` containing a
+post-build `src/`, `pkg/`, and compiler-temp space snapshot. This report is
+**not a measured peak**. To compare size, build identical sources/configuration
+once with the upstream setting and once with Zstd, measuring actual peak disk
+usage externally. Compression savings are toolchain- and kernel-dependent.
+The separate post-install cleanup feature remains optional and unchanged.
+
 ### Build validation before compilation
 
 The expensive build does not begin until the resolved kernel configuration passes validation.
