@@ -11,6 +11,7 @@ source "$REPO_ROOT/lib/hardware.sh"
 source "$REPO_ROOT/lib/policy.sh"
 source "$REPO_ROOT/lib/kconfig.sh"
 source "$REPO_ROOT/lib/validate.sh"
+source "$REPO_ROOT/lib/debug-compression.sh"
 source "$REPO_ROOT/lib/cleanup.sh"
 
 require_command() {
@@ -249,6 +250,18 @@ compile_selected_kernel() {
 
     printf '==> Built package output:\n'
     printf '    %s\n' "${packages[@]}"
+
+    # Post-build snapshot for same-config comparisons; not peak usage.
+    if command -v du >/dev/null 2>&1; then
+        local usage_report="$package_dir/.kernelforge-space-report.txt" path
+        : >"$usage_report"
+        for path in "$package_dir/src" "$package_dir/pkg" "$TMPDIR"; do
+            [[ ! -d "$path" ]] || du -sh -- "$path" >>"$usage_report" 2>/dev/null || true
+        done
+        printf '==> Post-build disk usage snapshot (not peak):\n'
+        cat "$usage_report"
+        printf '==> Saved disk usage report: %s\n' "$usage_report"
+    fi
 }
 
 ask_install() {
@@ -368,7 +381,9 @@ main() {
     cp "$tree/.config" "$baseline"
 
     resolve_kernel_tuning_policy "$tree" "$variant"
+    kernelforge_choose_dwarf_zstd "$tree"
     print_policy_summary
+    printf '==> Optional DWARF Zstd compression selected: %s\n' "${KERNELFORGE_DWARF_ZSTD:-no}"
     printf '\n'
 
     printf '==> Applying portable profile...\n'
@@ -376,11 +391,13 @@ main() {
 
     printf '==> Applying resolved feature policy...\n'
     kconfig_apply_policy "$tree"
+    kernelforge_apply_dwarf_zstd "$tree"
 
     printf '==> Resolving Kconfig dependencies...\n'
     make -C "$tree" olddefconfig
 
     validate_kernel_policy "$tree" "$baseline"
+    kernelforge_validate_dwarf_zstd "$baseline" "$tree/.config"
 
     printf '\n'
     printf '==> CONFIGURATION VALIDATION PASSED.\n'

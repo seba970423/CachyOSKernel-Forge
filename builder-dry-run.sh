@@ -11,6 +11,7 @@ source "$REPO_ROOT/lib/hardware.sh"
 source "$REPO_ROOT/lib/policy.sh"
 source "$REPO_ROOT/lib/kconfig.sh"
 source "$REPO_ROOT/lib/validate.sh"
+source "$REPO_ROOT/lib/debug-compression.sh"
 
 require_command() {
     local cmd="$1"
@@ -132,7 +133,9 @@ main() {
     cp "$tree/.config" "$baseline"
 
     resolve_kernel_tuning_policy "$tree" "$variant"
+    kernelforge_choose_dwarf_zstd "$tree"
     print_policy_summary
+    printf '==> Optional DWARF Zstd compression selected: %s\n' "${KERNELFORGE_DWARF_ZSTD:-no}"
     printf '\n'
 
     printf '==> Applying portable profile...\n'
@@ -140,11 +143,13 @@ main() {
 
     printf '==> Applying resolved feature policy...\n'
     kconfig_apply_policy "$tree"
+    kernelforge_apply_dwarf_zstd "$tree"
 
     printf '==> Resolving Kconfig dependencies...\n'
     make -C "$tree" olddefconfig
 
     validate_kernel_policy "$tree" "$baseline"
+    kernelforge_validate_dwarf_zstd "$baseline" "$tree/.config"
 
     printf '\n'
     printf '==> DRY-RUN PASSED.\n'

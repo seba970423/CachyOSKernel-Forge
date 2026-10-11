@@ -6,4 +6,5 @@ bash -n "$REPO_ROOT/builder.sh" "$REPO_ROOT/builder-dry-run.sh" "$REPO_ROOT"/lib
 "$SCRIPT_DIR/test-tick-frequency.sh"
 "$SCRIPT_DIR/test-optional-tuning.sh"
 "$SCRIPT_DIR/test-postinstall-cleanup.sh"
+bash "$SCRIPT_DIR/test-debug-compression.sh"
 printf 'All KernelForge desktop tests passed.\n'
