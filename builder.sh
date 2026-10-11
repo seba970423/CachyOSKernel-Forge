@@ -11,6 +11,7 @@ source "$REPO_ROOT/lib/hardware.sh"
 source "$REPO_ROOT/lib/policy.sh"
 source "$REPO_ROOT/lib/kconfig.sh"
 source "$REPO_ROOT/lib/validate.sh"
+source "$REPO_ROOT/lib/cleanup.sh"
 
 require_command() {
     local cmd="$1"
@@ -332,6 +333,7 @@ main() {
     local baseline
 
     workdir="$(mktemp -d --tmpdir=/var/tmp cachyos-kernel-build.XXXXXX)"
+    printf 'kernelforge-workdir-v1\n' >"$workdir/.kernelforge-workdir"
     checkout="$workdir/upstream"
 
     mkdir -p "$workdir/tmp"
@@ -401,12 +403,17 @@ main() {
             printf '==> INSTALLATION PASSED.\n'
             printf '==> Installed kernel/package name: linux-%s\n' "$custom_name"
             printf '==> Reboot manually when you are ready to boot the new kernel.\n'
+            kernelforge_offer_postinstall_cleanup "$workdir" "$variant" "$tree"
         else
             printf '==> Installation skipped.\n'
             printf '==> Packages remain available in the work tree.\n'
         fi
 
-        printf '==> Work tree kept for inspection: %s\n' "$workdir"
+        if [[ "$KERNELFORGE_CLEANUP_PERFORMED" == 1 ]]; then
+            printf '==> Retained kernel packages, logs, patches and configurations: %s\n' "$workdir"
+        else
+            printf '==> Work tree kept for inspection: %s\n' "$workdir"
+        fi
     else
         printf '\n'
         printf '==> Compilation skipped.\n'
