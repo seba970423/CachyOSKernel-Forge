@@ -179,6 +179,54 @@ install_upstream_prepare_compat() {
     else
         info "${symbol} is absent from selected variant config; no compatibility hook needed."
     fi
+
+    install_upstream_source_compat "$root" "$variant"
+}
+
+install_upstream_source_compat() {
+    local root="$1" variant="$2"
+    local pkgbuild="$root/$variant/PKGBUILD"
+    local marker='# KernelForge: checksum-pinned BORE source v1'
+    local checksum='acaf7cab034098f8728089921ce7ccadd66157e28d6910063e62df59f1fec11546909c36b2cfbde5d3673529d937f40e0b7d38427e64d11dacc33e73c0e3b6d8'
+    local tmp="${pkgbuild}.kernelforge-source-tmp"
+
+    [[ -f "$pkgbuild" ]] || {
+        printf 'ERROR: Cannot pin patch sources: PKGBUILD is missing.\n' >&2
+        return 1
+    }
+
+    # The 7.3 RT-BORE recipe retained this checksum after the patch on the
+    # kernel-patches master branch changed. The historical immutable source
+    # below has exactly the original expected BLAKE2b checksum. Other hashes
+    # retain upstream policy and continue through normal makepkg verification.
+    grep -Fq -- "$checksum" "$pkgbuild" || return 0
+    grep -Fq -- "$marker" "$pkgbuild" && return 0
+
+    cp -- "$pkgbuild" "$tmp" || return 1
+    if ! cat >>"$tmp" <<'KERNELFORGE_SOURCE_COMPAT'
+
+# KernelForge: checksum-pinned BORE source v1
+# Match the source URL AND its checksum at the same array index. All source
+# checksums and all other sources, including the RT i915 patch, are preserved.
+for _kernelforge_source_index in "${!source[@]}"; do
+    if [[ "${source[$_kernelforge_source_index]}" == 'https://raw.githubusercontent.com/cachyos/kernel-patches/master/7.3/sched/0001-bore-cachy.patch' &&
+          "${b2sums[$_kernelforge_source_index]:-}" == 'acaf7cab034098f8728089921ce7ccadd66157e28d6910063e62df59f1fec11546909c36b2cfbde5d3673529d937f40e0b7d38427e64d11dacc33e73c0e3b6d8' ]]; then
+        source[$_kernelforge_source_index]='https://raw.githubusercontent.com/cachyos/kernel-patches/2b4e3ce8fbd987d83d55fb9aa36c305c68be088c/7.3/sched/0001-bore-cachy.patch'
+    fi
+done
+unset _kernelforge_source_index
+KERNELFORGE_SOURCE_COMPAT
+    then
+        rm -f -- "$tmp"
+        return 1
+    fi
+    if ! bash -n "$tmp"; then
+        rm -f -- "$tmp"
+        printf 'ERROR: Source compatibility hook produced invalid shell syntax.\n' >&2
+        return 1
+    fi
+    mv -- "$tmp" "$pkgbuild" || return 1
+    info 'Installed checksum-pinned BORE source compatibility for the affected 7.3 recipe.'
 }
 
 fetch_upstream() {
@@ -201,3 +249,4 @@ fetch_upstream() {
     info "Fetched upstream revision:"
     git -C "$destination" rev-parse --short HEAD
 }
+
