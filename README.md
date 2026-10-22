@@ -139,6 +139,16 @@ Signature verification is never disabled or bypassed. If a required key cannot
 be retrieved or remains unusable, the build stops safely before the expensive
 source/build stages.
 
+### Checksum-pinned BORE compatibility
+
+The affected CachyOS 7.3 recipe expects an older BORE patch while downloading
+it from the moving `kernel-patches/master` URL. Forge recognizes the exact
+7.3 BORE source URL and expected BLAKE2b checksum at the same source-array
+index, and selects the immutable historical commit whose patch matches that
+original checksum. The RT i915 patch, kernel archive, signing keys and source
+checksums are preserved. Other URLs, versions or updated checksums retain
+upstream behavior. Unknown checksum failures still stop source preparation.
+
 ### Dependency handling
 
 Kernel PKGBUILD dependencies remain defined by the selected upstream CachyOS PKGBUILD.
