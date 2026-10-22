@@ -6,6 +6,8 @@ REPO_ROOT="$SCRIPT_DIR"
 
 source "$REPO_ROOT/lib/upstream.sh"
 source "$REPO_ROOT/lib/pgp.sh"
+source "$REPO_ROOT/lib/build.sh"
+source "$REPO_ROOT/lib/naming.sh"
 source "$REPO_ROOT/lib/profile.sh"
 source "$REPO_ROOT/lib/hardware.sh"
 source "$REPO_ROOT/lib/policy.sh"
@@ -13,157 +15,6 @@ source "$REPO_ROOT/lib/kconfig.sh"
 source "$REPO_ROOT/lib/validate.sh"
 source "$REPO_ROOT/lib/debug-compression.sh"
 source "$REPO_ROOT/lib/cleanup.sh"
-
-require_command() {
-    local cmd="$1"
-    command -v "$cmd" >/dev/null 2>&1 || {
-        printf 'ERROR: Required command not found: %s\n' "$cmd" >&2
-        exit 1
-    }
-}
-
-require_commands() {
-    local cmd
-    for cmd in git makepkg make find cp mktemp yes awk mv sort basename tail grep gpg mkdir; do
-        require_command "$cmd"
-    done
-}
-
-find_kernel_tree() {
-    local package_dir="$1"
-    local -a matches=()
-    local scripts_config
-
-    while IFS= read -r scripts_config; do
-        matches+=("$scripts_config")
-    done < <(
-        find "$package_dir/src" -maxdepth 4 -type f -path '*/scripts/config' -print
-    )
-
-    if (( ${#matches[@]} == 0 )); then
-        printf 'ERROR: Could not locate a prepared kernel scripts/config under %s/src\n' \
-            "$package_dir" >&2
-        return 1
-    fi
-
-    if (( ${#matches[@]} > 1 )); then
-        printf 'ERROR: Multiple prepared kernel trees were found; refusing to guess:\n' >&2
-        printf '  %s\n' "${matches[@]}" >&2
-        return 1
-    fi
-
-    dirname "$(dirname "${matches[0]}")"
-}
-
-prepare_upstream_source() {
-    local checkout="$1"
-    local variant="$2"
-    local package_dir="$checkout/$variant"
-    local log_file="$package_dir/.seba-prepare.log"
-
-    # This function is used in command substitution. Keep stdout reserved
-    # exclusively for the final kernel-tree path.
-    ensure_upstream_pgp_keys "$package_dir"
-
-    printf '==> Checking dependencies for %s...\n' "$variant" >&2
-    printf '==> Missing PKGBUILD dependencies, if any, will be offered through pacman.\n' >&2
-    printf '==> Preparing %s sources (no compilation)...\n' "$variant" >&2
-    printf '==> Kconfig prompts during upstream prepare will receive their default answer.\n' >&2
-    printf '==> Detailed prepare log: %s\n' "$log_file" >&2
-
-    if ! (
-        cd "$package_dir"
-        makepkg -s -o < <(yes '')
-    ) >"$log_file" 2>&1; then
-        printf 'ERROR: %s source preparation failed.\n' "$variant" >&2
-        printf '%s\n' '--- Last 80 lines of prepare log ---' >&2
-        tail -n 80 "$log_file" >&2 || true
-        return 1
-    fi
-
-    printf '==> %s sources prepared successfully.\n' "$variant" >&2
-
-    # The only stdout emitted by this function: the prepared tree path.
-    find_kernel_tree "$package_dir"
-}
-
-
-
-prompt_kernel_name() {
-    local variant="$1"
-    local default_name="${variant#linux-}"
-    local answer
-    local custom_name
-
-    printf '\n' >&2
-    printf '==> Selected kernel/package name: %s\n' "$variant" >&2
-    printf '==> Press Enter to keep the upstream name unchanged.\n' >&2
-
-    read -r -p "Rename selected kernel? [y/N]: " answer
-
-    case "${answer:-n}" in
-        y|Y|yes|YES|Yes)
-            while true; do
-                read -r -p "Custom kernel name (without 'linux-'): " custom_name
-                custom_name="${custom_name#linux-}"
-
-                if [[ "$custom_name" =~ ^[a-z0-9][a-z0-9._+-]{0,47}$ ]]; then
-                    printf '%s\n' "$custom_name"
-                    return 0
-                fi
-
-                printf 'Invalid kernel name. Use 1-48 lowercase letters, digits, ., _, + or -; start with a letter or digit.\n' >&2
-            done
-            ;;
-        *)
-            printf '%s\n' "$default_name"
-            return 0
-            ;;
-    esac
-}
-
-apply_custom_kernel_name() {
-    local checkout="$1"
-    local variant="$2"
-    local custom_name="$3"
-    local default_name="${variant#linux-}"
-    local pkgbuild="$checkout/$variant/PKGBUILD"
-    local tmp="${pkgbuild}.name-tmp"
-
-    if [[ "$custom_name" == "$default_name" ]]; then
-        printf '==> Keeping upstream kernel/package name: %s\n' "$variant"
-        return 0
-    fi
-
-    [[ -f "$pkgbuild" ]] || {
-        printf 'ERROR: Cannot rename kernel: PKGBUILD is missing for %s.\n' "$variant" >&2
-        return 1
-    }
-
-    if ! awk -v custom_name="$custom_name" '
-        /^pkgbase="linux-\$_pkgsuffix"$/ && !inserted {
-            print "# Custom kernel name selected by builder"
-            print "_pkgsuffix=\"" custom_name "\""
-            inserted=1
-        }
-        { print }
-        END { if (!inserted) exit 42 }
-    ' "$pkgbuild" >"$tmp"; then
-        rm -f "$tmp"
-        printf 'ERROR: Could not locate expected pkgbase assignment in %s PKGBUILD.\n' "$variant" >&2
-        return 1
-    fi
-
-    mv "$tmp" "$pkgbuild"
-
-    grep -qx "_pkgsuffix=\"$custom_name\"" "$pkgbuild" || {
-        printf 'ERROR: Failed to apply custom kernel name to %s PKGBUILD.\n' "$variant" >&2
-        return 1
-    }
-
-    printf '==> Custom kernel package base: linux-%s\n' "$custom_name"
-}
-
 
 ask_compile() {
     local answer
@@ -323,7 +174,7 @@ install_built_kernel() {
 
 
 main() {
-    require_commands
+    require_build_commands
 
     printf '==> Seba kernel builder\n'
     printf '==> Configuration is prepared and validated before any compilation starts.\n\n'
@@ -343,7 +194,6 @@ main() {
     local variant
     local custom_name
     local tree
-    local baseline
 
     workdir="$(mktemp -d --tmpdir=/var/tmp cachyos-kernel-build.XXXXXX)"
     printf 'kernelforge-workdir-v1\n' >"$workdir/.kernelforge-workdir"
@@ -372,32 +222,7 @@ main() {
 
     printf '==> Prepared kernel tree: %s\n' "$tree"
 
-    kconfig_require_tree "$tree"
-
-    printf '==> Normalizing upstream Kconfig baseline...\n'
-    make -C "$tree" olddefconfig
-
-    baseline="$tree/.config.seba-normalized-baseline"
-    cp "$tree/.config" "$baseline"
-
-    resolve_kernel_tuning_policy "$tree" "$variant"
-    kernelforge_choose_dwarf_zstd "$tree"
-    print_policy_summary
-    printf '==> Optional DWARF Zstd compression selected: %s\n' "${KERNELFORGE_DWARF_ZSTD:-no}"
-    printf '\n'
-
-    printf '==> Applying portable profile...\n'
-    kconfig_apply_profile "$tree"
-
-    printf '==> Applying resolved feature policy...\n'
-    kconfig_apply_policy "$tree"
-    kernelforge_apply_dwarf_zstd "$tree"
-
-    printf '==> Resolving Kconfig dependencies...\n'
-    make -C "$tree" olddefconfig
-
-    validate_kernel_policy "$tree" "$baseline"
-    kernelforge_validate_dwarf_zstd "$baseline" "$tree/.config"
+    configure_and_validate_kernel "$tree" "$variant" || return 1
 
     printf '\n'
     printf '==> CONFIGURATION VALIDATION PASSED.\n'
@@ -440,3 +265,4 @@ main() {
 }
 
 main "$@"
+

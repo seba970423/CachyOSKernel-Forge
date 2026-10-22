@@ -1,6 +1,6 @@
 # CachyOSKernel-Forge
 
-A hardware-aware custom kernel builder for Arch Linux and Arch-based distributions, using the CachyOS kernel packaging repository as upstream.
+A portable desktop kernel builder for Arch Linux and Arch-based distributions, using the CachyOS kernel packaging repository as upstream.
 
 The project is designed around one rule:
 
@@ -12,13 +12,12 @@ It is meant to reduce the amount of manual PKGBUILD/Kconfig work required to cre
 
 ## Current status
 
-The desktop workflow has been tested end-to-end on CachyOS, including:
+The earlier desktop workflow was tested end-to-end on CachyOS, including:
 
 - upstream cloning
 - dynamic kernel-variant discovery
 - hardware detection
 - profile validation
-- optional hardware pruning
 - Kconfig modification
 - Kconfig dependency resolution
 - post-resolution validation
@@ -53,24 +52,34 @@ Examples include:
 
 If upstream adds or removes compatible variants, the menu can adapt automatically.
 
-### Hardware-aware policy
+### Portable hardware policy
 
-The project detects relevant hardware before resolving the final kernel policy.
+Hardware inventory is diagnostic. A missing device on the build host never
+removes its kernel support. `pciutils`/`lspci` is optional; missing or inaccessible
+PCI inventory is reported as unknown, and GPU detection uses PCI vendor IDs.
 
-Current policy areas include:
+The desktop profile preserves upstream hardware and platform support across
+manufacturers, including ASUS, Dell, HP, Lenovo/ThinkPad and others. Unlike the
+separate ThinkPad edition, it has no manufacturer exclusion list. The former
+current-machine hardware-pruning prompt has been removed.
 
-- Intel KVM
-- Intel TDX
-- AMD SEV
-- Intel i915
-- AMDGPU
-- Nouveau
-- Intel Wi-Fi
-- Thunderbolt / USB4
-- NVMe-over-Fabrics
-- NVMe target/server support
+General-capability prompts preserve the selected kernel's normalized upstream
+state by default (`[Y/n]`):
 
-Hardware pruning is opt-in. By default, hardware support is preserved for portability.
+- standard KVM virtualization;
+- Intel TDX on Intel hosts, or AMD SEV on AMD hosts;
+- NVMe-over-Fabrics;
+- NVMe Target/server functionality.
+
+**Keep means preserve, not force-enable.** An upstream disabled or absent
+capability stays that way. The unprompted CPU vendor's confidential-VM support
+is preserved too. Missing VMX/SVM flags do not authorize removing KVM.
+An explicit No to KVM removes KVM and both vendor backends, including their
+TDX/SEV dependencies; the dependent capability prompt is then skipped.
+
+Ordinary local NVMe storage is independent of Fabrics/Target policy and remains
+protected, as do SATA/AHCI, graphics, networking, USB/HID, audio, power management
+and manufacturer platform drivers.
 
 ### Portable profile
 
@@ -78,9 +87,20 @@ The desktop profile applies the project's intended baseline kernel configuration
 
 Important settings are validated after Kconfig dependency resolution, so the builder checks the configuration that will actually be compiled rather than assuming that requested values survived `olddefconfig`.
 
+Hardware protection compares complete configuration lines for the families
+listed in `profiles/desktop.conf`, including module/built-in choices, strings
+and numeric settings. Newly added drivers under those prefixes are covered.
+A selected variant may deliberately disable a facility; for example,
+Hardened's disabled hibernation is preserved rather than overridden. This is
+validation of the declared hardware families, not every Kconfig symbol.
+
+The profile still deliberately applies native CPU optimization and tickless
+idle (`NO_HZ_IDLE`). Build on the intended CPU: broad driver support does not
+make a native-optimized kernel binary portable across unrelated processors.
+
 ### Safe custom naming
 
-After choosing an upstream kernel variant, the user can keep its original package/kernel name or explicitly rename it.
+After choosing an upstream kernel variant, both the full builder and dry-run let the user keep its original package/kernel name or explicitly rename it.
 
 Example:
 
@@ -131,7 +151,7 @@ The user still controls the pacman transaction; dependency installation is not f
 
 Kernel builds can consume a large amount of temporary storage.
 
-The builder therefore uses a disk-backed workspace under:
+The full builder uses a disk-backed workspace under:
 
 ```text
 /var/tmp/cachyos-kernel-build.XXXXXX
@@ -139,7 +159,7 @@ The builder therefore uses a disk-backed workspace under:
 
 and assigns a dedicated `TMPDIR` inside that workspace.
 
-This avoids placing a full kernel build inside a potentially size-limited `/tmp` tmpfs.
+The dry-run similarly uses `/var/tmp/kernelforge-desktop-dryrun.XXXXXX` with its own `TMPDIR`. Both entry points share source preparation, dependency handling, naming, configuration and validation through `lib/build.sh` and `lib/naming.sh`.
 
 ### Optional Zstandard-compressed DWARF
 
@@ -266,7 +286,7 @@ The builder will then:
 
 1. load and validate the selected project profile
 2. detect local hardware
-3. resolve optional hardware and virtualization policy
+3. resolve optional capability preservation/removal choices
 4. create a disk-backed build workspace
 5. clone the latest CachyOS kernel packaging repository
 6. discover available compatible kernel variants
@@ -276,7 +296,7 @@ The builder will then:
 10. prepare the upstream kernel source
 11. normalize the upstream Kconfig baseline and ask for supported optional tuning
 12. apply the project profile
-13. apply the resolved hardware/feature policy
+13. apply the resolved capability policy
 14. run `olddefconfig`
 15. validate the final resolved Kconfig
 16. optionally compile the kernel
@@ -290,7 +310,20 @@ Local regression tests (no kernel compilation or installation):
 ./tests/run-tests.sh
 ```
 
-`builder-dry-run.sh` is retained as a development and validation tool.
+Run source preparation and configuration validation without compiling or installing:
+
+```bash
+./builder-dry-run.sh
+```
+
+The dry-run can offer to install missing build dependencies through `pacman`,
+just like the full builder; it does not build or install kernel packages.
+
+The desktop v0.5 policy update has local regression coverage for detection,
+prompt defaults and explicit removals, the captured desktop configuration,
+manufacturer driver preservation, shared preparation/naming, failure handling,
+tick frequency, optional tuning, cleanup and DWARF compression. These checks do
+not constitute a new kernel compilation or boot test.
 
 It is useful when changing profiles, hardware detection, policy logic, or Kconfig handling without waiting for a full kernel compilation.
 
@@ -303,6 +336,8 @@ A dry run should be used before expensive real builds when making substantial ch
 ├── builder.sh
 ├── builder-dry-run.sh
 ├── lib/
+│   ├── build.sh
+│   ├── naming.sh
 │   ├── hardware.sh
 │   ├── kconfig.sh
 │   ├── pgp.sh
@@ -332,7 +367,7 @@ Checks upstream `validpgpkeys`, offers safe retrieval/refresh of missing signing
 
 ### `lib/policy.sh`
 
-Interactive policy resolution based on detected hardware and user choices.
+Interactive capability preservation/removal choices; CPU vendor selects the applicable TDX/SEV prompt.
 
 ### `lib/kconfig.sh`
 
@@ -352,7 +387,7 @@ Profile loading and profile-value validation.
 
 ### `profiles/`
 
-Human-maintained project profiles. The desktop profile is the current known-good baseline. A more aggressively stripped ThinkPad-oriented profile can be developed separately without destabilizing the desktop profile.
+Human-maintained desktop policy and a captured regression reference. The [ThinkPad edition](https://github.com/seba970423/CachyOSKernel-Forge-Thinkpad-Edition) maintains its own family-specific policy independently.
 
 ## Design principles
 
@@ -392,16 +427,15 @@ A custom kernel can fail to boot even when compilation succeeds.
 
 Keep at least one known-good kernel installed until the new kernel has been boot-tested successfully.
 
-Do not aggressively strip hardware support unless you understand the portability trade-off. A configuration optimized only for currently detected hardware may fail after hardware changes, docking, adapter changes, Wi-Fi replacement, or use on another machine.
+The desktop profile preserves support beyond the currently detected hardware. Explicitly removing KVM or specialized NVMe capabilities can still affect software that uses those features.
 
 ## Future work
 
 Potential follow-up work includes:
 
-- a dedicated ThinkPad profile
 - broader clean-install testing on vanilla Arch
 - testing on additional Arch-based distributions
-- more hardware-policy coverage
-- optional aggressive current-machine pruning while retaining the portable profile as the default
+- expand hardware preservation coverage as upstream adds new driver families
 
 The desktop profile should remain conservative and known-good while more specialized profiles are developed independently.
+

@@ -196,99 +196,49 @@ validate_kernel_policy() {
     # Portable profile invariants.
     validate_profile_invariants "$config" || return 1
 
-    # Standard virtualization: keep means preserve upstream state.
-    if [[ "${KEEP_KVM:-no}" == "yes" ]]; then
-        case "${CPU_VENDOR:-unknown}" in
-            intel)
-                validate_preserved "$baseline" "$config" KVM_INTEL || return 1
-                ;;
-            amd)
-                validate_preserved "$baseline" "$config" KVM_AMD || return 1
-                ;;
-        esac
-    else
-        case "${CPU_VENDOR:-unknown}" in
-            intel)
-                validate_disabled "$config" KVM_INTEL || return 1
-                ;;
-            amd)
-                validate_disabled "$config" KVM_AMD || return 1
-                ;;
-        esac
-    fi
+    # Preserve exact hardware settings across every supported vendor. Disabled
+    # or absent upstream features are legitimate (e.g. Hardened hibernation).
+    local prefixes pattern symbol
+    prefixes="$(IFS='|'; printf '%s' "${PRESERVE_HARDWARE_PREFIXES[*]}")"
+    pattern="^(CONFIG_(${prefixes})[A-Z0-9_]*=.*|# CONFIG_(${prefixes})[A-Z0-9_]* is not set)$"
+    validate_config_group_preserved "$baseline" "$config" "$pattern" \
+        'Desktop hardware and platform support' || return 1
 
-    # Advanced virtualization.
-    if [[ "${CPU_VENDOR:-unknown}" == "intel" ]]; then
-        if [[ "${ENABLE_INTEL_TDX:-no}" == "yes" ]]; then
-            validate_enabled_bool "$config" KVM_INTEL_TDX || return 1
+    for symbol in KVM KVM_INTEL KVM_AMD; do
+        if [[ "${KEEP_KVM:-yes}" == yes ]]; then
+            validate_preserved "$baseline" "$config" "$symbol" || return 1
         else
-            validate_disabled "$config" KVM_INTEL_TDX || return 1
+            validate_disabled "$config" "$symbol" || return 1
         fi
-    fi
-
-    if [[ "${CPU_VENDOR:-unknown}" == "amd" ]]; then
-        if [[ "${ENABLE_AMD_SEV:-no}" == "yes" ]]; then
-            validate_enabled_bool "$config" KVM_AMD_SEV || return 1
+    done
+    for symbol in KVM_INTEL_TDX KVM_AMD_SEV; do
+        local keep="${KEEP_INTEL_TDX:-yes}"
+        [[ "$symbol" != KVM_AMD_SEV ]] || keep="${KEEP_AMD_SEV:-yes}"
+        if [[ "${KEEP_KVM:-yes}" == yes && "$keep" == yes ]]; then
+            validate_preserved "$baseline" "$config" "$symbol" || return 1
         else
-            validate_disabled "$config" KVM_AMD_SEV || return 1
+            validate_disabled "$config" "$symbol" || return 1
         fi
-    fi
-
-    # Graphics.
-    if [[ "${KEEP_I915:-yes}" == "yes" ]]; then
-        validate_preserved "$baseline" "$config" DRM_I915 || return 1
-    else
-        validate_disabled "$config" DRM_I915 || return 1
-    fi
-
-    if [[ "${KEEP_AMDGPU:-yes}" == "yes" ]]; then
-        validate_preserved "$baseline" "$config" DRM_AMDGPU || return 1
-    else
-        validate_disabled "$config" DRM_AMDGPU || return 1
-    fi
-
-    if [[ "${KEEP_NOUVEAU:-yes}" == "yes" ]]; then
-        validate_preserved "$baseline" "$config" DRM_NOUVEAU || return 1
-    else
-        validate_disabled "$config" DRM_NOUVEAU || return 1
-    fi
-
-    # Intel Wi-Fi.
-    if [[ "${KEEP_IWLWIFI:-yes}" == "yes" ]]; then
-        validate_preserved "$baseline" "$config" IWLWIFI || return 1
-    else
-        validate_disabled "$config" IWLWIFI || return 1
-    fi
-
-    # Thunderbolt / USB4.
-    if [[ "${KEEP_THUNDERBOLT:-yes}" == "yes" ]]; then
-        validate_preserved "$baseline" "$config" USB4 || return 1
-    else
-        validate_disabled "$config" USB4 || return 1
-    fi
+    done
 
     validate_tick_frequency "$baseline" "$config" || return 1
 
-    # Specialized NVMe functionality.
-    local symbol
-    if [[ "${ENABLE_NVME_FABRICS:-no}" == "yes" ]]; then
-        for symbol in NVME_FABRICS NVME_RDMA NVME_FC NVME_TCP; do
-            validate_enabled_any "$config" "$symbol" || return 1
-        done
+    if [[ "${KEEP_NVME_FABRICS:-yes}" == yes ]]; then
+        validate_config_group_preserved "$baseline" "$config" \
+            '^(CONFIG_NVME_(FABRICS|RDMA|FC|TCP)[A-Z0-9_]*=.*|# CONFIG_NVME_(FABRICS|RDMA|FC|TCP)[A-Z0-9_]* is not set)$' \
+            'NVMe Fabrics support' || return 1
     else
         for symbol in NVME_FABRICS NVME_RDMA NVME_FC NVME_TCP; do
             validate_disabled "$config" "$symbol" || return 1
         done
     fi
-
-    if [[ "${ENABLE_NVME_TARGET:-no}" == "yes" ]]; then
-        validate_enabled_any "$config" NVME_TARGET || return 1
+    if [[ "${KEEP_NVME_TARGET:-yes}" == yes ]]; then
+        validate_config_group_preserved "$baseline" "$config" \
+            '^(CONFIG_NVME_TARGET[A-Z0-9_]*=.*|# CONFIG_NVME_TARGET[A-Z0-9_]* is not set)$' \
+            'NVMe Target support' || return 1
     else
         validate_disabled "$config" NVME_TARGET || return 1
     fi
-
-    # Ordinary local NVMe must never be altered by Fabrics/Target policy.
-    validate_preserved "$baseline" "$config" BLK_DEV_NVME || return 1
 
     printf '==> Kernel policy validation passed.\n'
 }

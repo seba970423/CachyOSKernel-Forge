@@ -58,60 +58,14 @@ validate_profile() {
             ;;
     esac
 
-    case "${DEFAULT_ENABLE_INTEL_TDX:-}" in
-        yes|no)
-            ;;
-        *)
-            die "DEFAULT_ENABLE_INTEL_TDX must be yes or no."
-            ;;
-    esac
-
-    case "${DEFAULT_ENABLE_AMD_SEV:-}" in
-        yes|no)
-            ;;
-        *)
-            die "DEFAULT_ENABLE_AMD_SEV must be yes or no."
-            ;;
-    esac
-
-    local auto_setting
-    for auto_setting in \
-        "${DEFAULT_KEEP_THUNDERBOLT:-}" \
-        "${DEFAULT_KEEP_IWLWIFI:-}" \
-        "${DEFAULT_KEEP_I915:-}"
-    do
-        case "$auto_setting" in
-            yes|no|auto)
-                ;;
-            *)
-                die "Hardware-related defaults must be yes, no, or auto."
-                ;;
+    local setting
+    for setting in DEFAULT_KEEP_INTEL_TDX DEFAULT_KEEP_AMD_SEV \
+        DEFAULT_KEEP_NVME_FABRICS DEFAULT_KEEP_NVME_TARGET; do
+        case "${!setting:-}" in
+            yes|no) ;;
+            *) die "$setting must be yes or no." ;;
         esac
     done
-
-    case "${DEFAULT_AGGRESSIVE_HARDWARE_PRUNING:-no}" in
-        yes|no)
-            ;;
-        *)
-            die "DEFAULT_AGGRESSIVE_HARDWARE_PRUNING must be yes or no when set."
-            ;;
-    esac
-
-    case "${DEFAULT_ENABLE_NVME_FABRICS:-}" in
-        yes|no)
-            ;;
-        *)
-            die "DEFAULT_ENABLE_NVME_FABRICS must be yes or no."
-            ;;
-    esac
-
-    case "${DEFAULT_ENABLE_NVME_TARGET:-}" in
-        yes|no)
-            ;;
-        *)
-            die "DEFAULT_ENABLE_NVME_TARGET must be yes or no."
-            ;;
-    esac
 
     case "${DEFAULT_KERNEL_HZ:-}" in
         upstream|100|250|300|1000)
@@ -129,28 +83,16 @@ validate_profile() {
     declare -p REQUIRE_DISABLED >/dev/null 2>&1 ||
         die "REQUIRE_DISABLED must be defined by desktop.conf."
 
+    declare -p PRESERVE_HARDWARE_PREFIXES >/dev/null 2>&1 ||
+        die "PRESERVE_HARDWARE_PREFIXES must be defined by desktop.conf."
+    (( ${#PRESERVE_HARDWARE_PREFIXES[@]} > 0 )) ||
+        die "PRESERVE_HARDWARE_PREFIXES must not be empty."
+    local prefix
+    for prefix in "${PRESERVE_HARDWARE_PREFIXES[@]}"; do
+        [[ "$prefix" =~ ^[A-Z][A-Z0-9_]*$ ]] ||
+            die "Invalid hardware preservation prefix: $prefix"
+    done
+
     info "Profile values are valid."
 }
 
-detect_cpu_vendor() {
-    local vendor
-
-    vendor="$(awk -F ': ' '/^vendor_id/ {print $2; exit}' /proc/cpuinfo)"
-
-    case "$vendor" in
-        GenuineIntel)
-            CPU_VENDOR="intel"
-            ;;
-        AuthenticAMD)
-            CPU_VENDOR="amd"
-            ;;
-        *)
-            CPU_VENDOR="unknown"
-            ;;
-    esac
-
-    CPU_MODEL="$(awk -F ': ' '/^model name/ {print $2; exit}' /proc/cpuinfo)"
-
-    info "CPU vendor: $CPU_VENDOR"
-    info "CPU model: ${CPU_MODEL:-unknown}"
-}

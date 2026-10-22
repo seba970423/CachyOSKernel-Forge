@@ -2,19 +2,8 @@
 
 # Kernel Kconfig application and verification layer.
 #
-# Expected inputs:
-#   KEEP_KVM
-#   ENABLE_INTEL_TDX
-#   ENABLE_AMD_SEV
-#   KEEP_I915
-#   KEEP_AMDGPU
-#   KEEP_NOUVEAU
-#   KEEP_IWLWIFI
-#   KEEP_THUNDERBOLT
-#   ENABLE_NVME_FABRICS
-#   ENABLE_NVME_TARGET
-#   KERNEL_HZ
-#   ENABLE_AUTOGROUP / ENABLE_THP_MADVISE
+# Policy inputs: KEEP_KVM, KEEP_INTEL_TDX, KEEP_AMD_SEV,
+# KEEP_NVME_FABRICS, KEEP_NVME_TARGET, KERNEL_HZ and optional tuning choices.
 
 kconfig_require_tree() {
     local tree="$1"
@@ -49,13 +38,6 @@ kconfig_enable() {
     "$tree/scripts/config" --file "$tree/.config" --enable "$symbol"
 }
 
-kconfig_module() {
-    local tree="$1"
-    local symbol="$2"
-
-    "$tree/scripts/config" --file "$tree/.config" --module "$symbol"
-}
-
 kconfig_disable() {
     local tree="$1"
     local symbol="$2"
@@ -76,49 +58,6 @@ kconfig_state() {
     else
         printf 'absent'
     fi
-}
-
-kconfig_set_bool() {
-    local tree="$1"
-    local symbol="$2"
-    local value="$3"
-
-    case "$value" in
-        yes)
-            kconfig_enable "$tree" "$symbol"
-            ;;
-        no)
-            kconfig_disable "$tree" "$symbol"
-            ;;
-        *)
-            echo "ERROR: Invalid policy value for CONFIG_${symbol}: $value" >&2
-            return 1
-            ;;
-    esac
-}
-
-kconfig_set_tristate() {
-    local tree="$1"
-    local symbol="$2"
-    local value="$3"
-    local state
-
-    case "$value" in
-        yes)
-            state="$(kconfig_state "$tree/.config" "$symbol")"
-            if [[ "$state" != "y" && "$state" != "m" ]]; then
-                # Prefer a module for explicitly requested optional subsystems.
-                kconfig_module "$tree" "$symbol"
-            fi
-            ;;
-        no)
-            kconfig_disable "$tree" "$symbol"
-            ;;
-        *)
-            echo "ERROR: Invalid tristate policy value for CONFIG_${symbol}: $value" >&2
-            return 1
-            ;;
-    esac
 }
 
 kconfig_symbol_exists() {
@@ -217,89 +156,42 @@ kconfig_apply_tick_frequency() {
     # CONFIG_HZ is derived by Kconfig; olddefconfig must resolve it.
 }
 
-kconfig_apply_policy() {
-    local tree="$1"
+kconfig_disable_if_present() {
+    local tree="$1" symbol="$2"
+    if kconfig_symbol_exists "$tree" "$symbol"; then
+        kconfig_disable "$tree" "$symbol" || return 1
+    fi
+}
 
+kconfig_apply_policy() {
+    local tree="$1" symbol
     kconfig_require_tree "$tree" || return 1
 
-    # --- Standard virtualization ---
-
-    if [[ "${KEEP_KVM:-no}" == "no" ]]; then
-        case "${CPU_VENDOR:-unknown}" in
-            intel)
-                kconfig_require_symbol "$tree" KVM_INTEL || return 1
-                kconfig_disable "$tree" KVM_INTEL
-                ;;
-            amd)
-                kconfig_require_symbol "$tree" KVM_AMD || return 1
-                kconfig_disable "$tree" KVM_AMD
-                ;;
-        esac
+    if [[ "${KEEP_KVM:-yes}" == no ]]; then
+        for symbol in KVM KVM_INTEL KVM_AMD KVM_INTEL_TDX KVM_AMD_SEV; do
+            kconfig_disable_if_present "$tree" "$symbol" || return 1
+        done
+    else
+        if [[ "${KEEP_INTEL_TDX:-yes}" == no ]]; then
+            kconfig_disable_if_present "$tree" KVM_INTEL_TDX || return 1
+        fi
+        if [[ "${KEEP_AMD_SEV:-yes}" == no ]]; then
+            kconfig_disable_if_present "$tree" KVM_AMD_SEV || return 1
+        fi
     fi
 
-    # --- Advanced virtualization ---
-
-    if [[ "${CPU_VENDOR:-unknown}" == "intel" ]]; then
-        kconfig_require_symbol "$tree" KVM_INTEL_TDX || return 1
-        kconfig_set_bool "$tree" KVM_INTEL_TDX "${ENABLE_INTEL_TDX:-no}"
-    fi
-
-    if [[ "${CPU_VENDOR:-unknown}" == "amd" ]]; then
-        kconfig_require_symbol "$tree" KVM_AMD_SEV || return 1
-        kconfig_set_bool "$tree" KVM_AMD_SEV "${ENABLE_AMD_SEV:-no}"
-    fi
-
-    # --- Graphics ---
-
-    if [[ "${KEEP_I915:-yes}" == "no" ]]; then
-        kconfig_require_symbol "$tree" DRM_I915 || return 1
-        kconfig_disable "$tree" DRM_I915
-    fi
-
-    if [[ "${KEEP_AMDGPU:-yes}" == "no" ]]; then
-        kconfig_require_symbol "$tree" DRM_AMDGPU || return 1
-        kconfig_disable "$tree" DRM_AMDGPU
-    fi
-
-    if [[ "${KEEP_NOUVEAU:-yes}" == "no" ]]; then
-        kconfig_require_symbol "$tree" DRM_NOUVEAU || return 1
-        kconfig_disable "$tree" DRM_NOUVEAU
-    fi
-
-    # --- Intel Wi-Fi ---
-
-    if [[ "${KEEP_IWLWIFI:-yes}" == "no" ]]; then
-        kconfig_require_symbol "$tree" IWLWIFI || return 1
-        kconfig_disable "$tree" IWLWIFI
-    fi
-
-    # --- Thunderbolt / USB4 ---
-
-    kconfig_require_symbol "$tree" USB4 || return 1
-
-    if [[ "${KEEP_THUNDERBOLT:-yes}" == "no" ]]; then
-        kconfig_disable "$tree" USB4
-    fi
-
-    # --- User-selected tick frequency (no unrelated latency changes) ---
     kconfig_apply_tick_frequency "$tree" || return 1
     kconfig_apply_optional_tuning "$tree" || return 1
 
-    # --- Specialized NVMe functionality ---
-
-    local symbol
-    for symbol in NVME_FABRICS NVME_RDMA NVME_FC NVME_TCP; do
-        kconfig_require_symbol "$tree" "$symbol" || return 1
-        kconfig_set_tristate "$tree" "$symbol" "${ENABLE_NVME_FABRICS:-no}" || return 1
-    done
-
-    kconfig_require_symbol "$tree" NVME_TARGET || return 1
-    kconfig_set_tristate "$tree" NVME_TARGET "${ENABLE_NVME_TARGET:-no}" || return 1
-
-    # Never touch CONFIG_BLK_DEV_NVME here.
-    # Local NVMe support is independent from Fabrics/Target policy.
-
-    return 0
+    if [[ "${KEEP_NVME_FABRICS:-yes}" == no ]]; then
+        for symbol in NVME_FABRICS NVME_RDMA NVME_FC NVME_TCP; do
+            kconfig_disable_if_present "$tree" "$symbol" || return 1
+        done
+    fi
+    if [[ "${KEEP_NVME_TARGET:-yes}" == no ]]; then
+        kconfig_disable_if_present "$tree" NVME_TARGET || return 1
+    fi
+    # No host-inventory pruning and no vendor/platform removal list.
 }
 
 # Probe dependencies with a separate config. The selected .config is untouched.
@@ -392,3 +284,4 @@ kconfig_apply_optional_tuning() {
         *) echo 'ERROR: Invalid transparent hugepage policy.' >&2; return 1 ;;
     esac
 }
+
