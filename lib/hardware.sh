@@ -47,10 +47,25 @@ detect_cpu() {
 }
 
 detect_pci_hardware() {
-    have_cmd lspci ||
-        die "lspci is required for hardware detection."
+    PCI_DUMP=""
+    GPU_DUMP=""
+    GPU_INTEL="unknown"
+    GPU_AMD="unknown"
+    GPU_NVIDIA="unknown"
+    WIFI_INTEL="unknown"
+    THUNDERBOLT_PRESENT="unknown"
+    NVME_PRESENT="unknown"
 
-    PCI_DUMP="$(lspci -nn)"
+    # PCI inventory is diagnostic only and must not become a hard dependency
+    # or influence the portable desktop policy.
+    if ! have_cmd lspci; then
+        return 0
+    fi
+
+    if ! PCI_DUMP="$(lspci -nn)"; then
+        printf 'WARNING: PCI inventory unavailable; preserving upstream hardware support.\n' >&2
+        return 0
+    fi
 
     GPU_INTEL="no"
     GPU_AMD="no"
@@ -64,9 +79,11 @@ detect_pci_hardware() {
     GPU_DUMP="$(grep -Ei 'VGA compatible controller|3D controller|Display controller' <<<"$PCI_DUMP" || true)"
 
     if [[ -n "$GPU_DUMP" ]]; then
-        grep -qi 'Intel' <<<"$GPU_DUMP" && GPU_INTEL="yes" || true
-        grep -Eqi 'AMD|ATI' <<<"$GPU_DUMP" && GPU_AMD="yes" || true
-        grep -qi 'NVIDIA' <<<"$GPU_DUMP" && GPU_NVIDIA="yes" || true
+        # Use PCI vendor IDs instead of names. A loose case-insensitive "ATI"
+        # match also matches the word "compatible" in every VGA description.
+        grep -Eqi '\[8086:[[:xdigit:]]{4}\]' <<<"$GPU_DUMP" && GPU_INTEL="yes" || true
+        grep -Eqi '\[1002:[[:xdigit:]]{4}\]' <<<"$GPU_DUMP" && GPU_AMD="yes" || true
+        grep -Eqi '\[10de:[[:xdigit:]]{4}\]' <<<"$GPU_DUMP" && GPU_NVIDIA="yes" || true
     fi
 
     if grep -Ei 'Network controller|Wireless' <<<"$PCI_DUMP" | grep -qi 'Intel'; then
@@ -142,3 +159,4 @@ detect_hardware() {
 
     return 0
 }
+

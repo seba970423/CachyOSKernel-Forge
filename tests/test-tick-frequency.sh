@@ -21,15 +21,9 @@ GPU_INTEL=yes
 WIFI_INTEL=yes
 THUNDERBOLT_PRESENT=yes
 # General-policy prompts must not consume the later kernel tuning answers.
-if [[ "$PROFILE_NAME" == "thinkpad" ]]; then
-    resolve_policy <<< $'\n\nn\nn' > /dev/null
-    [[ "$KEEP_NVME_FABRICS" == no && "$KEEP_NVME_TARGET" == no ]] ||
-        fail "ThinkPad prompt flow shifted answers."
-else
-    resolve_policy <<< $'y\nn\nn\nn\nn' > /dev/null
-    [[ "$ENABLE_NVME_FABRICS" == no && "$ENABLE_NVME_TARGET" == no ]] ||
-        fail "Desktop prompt flow shifted answers."
-fi
+resolve_policy <<< $'y\ny\nn\nn' > /dev/null
+[[ "$KEEP_NVME_FABRICS" == no && "$KEEP_NVME_TARGET" == no ]] ||
+    fail "Desktop prompt flow shifted answers."
 resolve_tick_frequency_policy <<< "" > /dev/null
 [[ "$KERNEL_HZ" == upstream ]] || fail "Enter did not preserve upstream."
 resolve_tick_frequency_policy < /dev/null > /dev/null
@@ -128,3 +122,4 @@ for mode in rt hardened; do
     validate_tick_frequency "$TEST_TMPDIR/variant.config" "$TREE/.config" > /dev/null
 done
 printf 'Tick frequency tests passed (%s).\n' "$PROFILE_NAME"
+

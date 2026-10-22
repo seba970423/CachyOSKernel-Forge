@@ -6,6 +6,7 @@ source "$REPO_ROOT/lib/profile.sh"
 source "$REPO_ROOT/lib/policy.sh"
 source "$REPO_ROOT/lib/kconfig.sh"
 source "$REPO_ROOT/lib/validate.sh"
+source "$REPO_ROOT/lib/debug-compression.sh"
 TEST_TMPDIR="$(mktemp -d --tmpdir kernelforge-tuning-test.XXXXXX)"
 trap 'rm -rf -- "$TEST_TMPDIR"' EXIT
 TREE="$TEST_TMPDIR/tree"
@@ -239,11 +240,7 @@ for entry in builder.sh builder-dry-run.sh; do
             if [[ "$workflow_variant" == *-rt-* ]]; then
                 "$TREE/scripts/config" --file "$TREE/.config" --enable PREEMPT_RT
             fi
-            if [[ "$PROFILE_NAME" == thinkpad ]]; then
-                answers=$'y\ny\ny\ny\nupstream\ny\ny'
-            else
-                answers=$'y\nn\nn\nn\nn\nupstream\ny\ny'
-            fi
+            answers=$'y\ny\ny\ny\nupstream\ny\ny'
             main <<< "$answers" > "$OUTPUT" 2>&1
             selected=$(awk '/TEST: kernel selected/ {print NR; exit}' "$OUTPUT")
             prepared=$(awk '/TEST: sources prepared/ {print NR; exit}' "$OUTPUT")
@@ -261,3 +258,4 @@ for entry in builder.sh builder-dry-run.sh; do
     done
 done
 printf 'Optional tuning tests passed (%s).\n' "$PROFILE_NAME"
+
