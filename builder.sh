@@ -7,6 +7,7 @@ REPO_ROOT="$SCRIPT_DIR"
 source "$REPO_ROOT/lib/upstream.sh"
 source "$REPO_ROOT/lib/pgp.sh"
 source "$REPO_ROOT/lib/build.sh"
+source "$REPO_ROOT/lib/bore-compat.sh"
 source "$REPO_ROOT/lib/naming.sh"
 source "$REPO_ROOT/lib/profile.sh"
 source "$REPO_ROOT/lib/hardware.sh"
@@ -35,6 +36,7 @@ ask_compile() {
 compile_selected_kernel() {
     local checkout="$1"
     local variant="$2"
+    local tree="$3"
     local package_dir="$checkout/$variant"
     local log_file="$package_dir/.seba-build.log"
     local package_list_file="$package_dir/.seba-built-packages"
@@ -47,6 +49,8 @@ compile_selected_kernel() {
     printf '==> Reusing the already-prepared and validated source tree.\n'
     printf '==> prepare() will NOT be run again.\n'
     printf '==> Detailed build log: %s\n' "$log_file"
+
+    kernelforge_preflight_bore_scheduler "$tree" "$package_dir/.seba-scheduler-preflight.log" || return 1
 
     # --noextract (-e) is critical here: our final validated .config lives in
     # the existing src/ tree. Re-extracting or rerunning prepare() would
@@ -68,6 +72,8 @@ compile_selected_kernel() {
 
     if ! wait "$build_pid"; then
         printf 'ERROR: Kernel package build failed.\n' >&2
+        printf '%s\n' '--- First compiler/linker errors ---' >&2
+        grep -nE -m 12 '(fatal )?error:|undefined reference|No rule to make target|Error [0-9]+' "$log_file" >&2 || true
         printf '%s\n' '--- Last 120 lines of build log ---' >&2
         tail -n 120 "$log_file" >&2 || true
         return 1
@@ -231,7 +237,7 @@ main() {
     printf '==> Prepared work tree: %s\n' "$workdir"
 
     if ask_compile; then
-        compile_selected_kernel "$checkout" "$variant"
+        compile_selected_kernel "$checkout" "$variant" "$tree"
 
         printf '\n'
         printf '==> BUILD PASSED.\n'
