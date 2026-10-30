@@ -149,6 +149,26 @@ original checksum. The RT i915 patch, kernel archive, signing keys and source
 checksums are preserved. Other URLs, versions or updated checksums retain
 upstream behavior. Unknown checksum failures still stop source preparation.
 
+### BORE 7.3 scheduler source compatibility and early compile check
+
+A CachyOS 7.3.1 RT-BORE build exposed an upstream source/patch mismatch:
+`kernel/sched/fair.c` referenced `normalized_sysctl_sched_base_slice`
+inside `update_protect_slice()`, even though the BORE branch does not
+define that variable. Kconfig validation alone cannot detect this C
+compilation error.
+
+When the resolved configuration enables `CONFIG_SCHED_BORE=y`, Forge now
+checks for that exact known source pattern, then guards the slice selection
+so the BORE branch uses `sysctl_sched_base_slice`. Other variants are
+unchanged. Unrecognized source layouts are not rewritten.
+
+After the user accepts compilation, a small scheduler-object preflight runs
+before the full `makepkg` build. It saves
+`.seba-scheduler-preflight.log` and stops early if the affected object
+cannot compile. This does **not** guarantee a complete kernel build will
+succeed; the full build still has to compile all other objects. Source
+archives, signatures and checksum verification remain unchanged.
+
 ### Dependency handling
 
 Kernel PKGBUILD dependencies remain defined by the selected upstream CachyOS PKGBUILD.
