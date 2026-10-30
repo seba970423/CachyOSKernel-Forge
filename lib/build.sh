@@ -103,4 +103,8 @@ configure_and_validate_kernel() {
 
     validate_kernel_policy "$tree" "$baseline" || return 1
     kernelforge_validate_dwarf_zstd "$baseline" "$tree/.config" || return 1
+
+    # A clean Kconfig can still produce invalid C after an upstream scheduler
+    # patch; guard the known BORE 7.3 mismatch before any full compilation.
+    kernelforge_fix_bore_protect_slice "$tree"
 }
