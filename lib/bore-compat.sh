@@ -82,7 +82,12 @@ kernelforge_preflight_bore_scheduler() {
     [[ -f "$tree/.config" ]] || return 1
     grep -qx 'CONFIG_SCHED_BORE=y' "$tree/.config" || return 0
     printf '==> Checking BORE scheduler compilation before the full kernel build...\n'
-    if ! make -C "$tree" -j2 kernel/sched/fair.o >"$log_file" 2>&1; then
+    # Discard the probe object and its command metadata: makepkg may select
+    # different compiler flags, and must compile this object for itself.
+    local result=0
+    make -C "$tree" -j2 kernel/sched/fair.o >"$log_file" 2>&1 || result=$?
+    rm -f -- "$tree/kernel/sched/fair.o" "$tree/kernel/sched/.fair.o.cmd" || return 1
+    if (( result != 0 )); then
         printf 'ERROR: BORE scheduler preflight failed; full kernel compilation was NOT started.\n' >&2
         printf '==> Preflight log: %s\n' "$log_file" >&2
         grep -nE -m 10 '(^|[[:space:]])(fatal )?error:|Error [0-9]+' "$log_file" >&2 || true
