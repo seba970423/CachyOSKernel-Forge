@@ -9,7 +9,7 @@ bash -n "$REPO_ROOT/builder.sh" "$REPO_ROOT/builder-dry-run.sh" "$REPO_ROOT"/lib
 "$SCRIPT_DIR/test-desktop-preservation.sh"
 "$SCRIPT_DIR/test-shared-build.sh"
 "$SCRIPT_DIR/test-upstream-source-compat.sh"
-"$SCRIPT_DIR/test-bore-source-compat.sh"
+bash "$SCRIPT_DIR/test-bore-source-compat.sh"
 "$SCRIPT_DIR/test-tick-frequency.sh"
 "$SCRIPT_DIR/test-optional-tuning.sh"
 "$SCRIPT_DIR/test-postinstall-cleanup.sh"
